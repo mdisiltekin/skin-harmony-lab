@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient";
 
 // ═══════════════════════════════════════
 //  SKIN HARMONY LAB v4
@@ -153,6 +154,51 @@ const Btn = ({ children, onClick, variant, disabled, style: s }) => (
 export default function SkinHarmonyLab() {
   // screen: "landing" | "onboarding" | "main"
   const [screen, setScreen] = useState("landing");
+
+  // ── Supabase auth ──
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authMode, setAuthMode] = useState("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthChecked(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function handleEmailAuth() {
+    setAuthError(""); setAuthBusy(true);
+    try {
+      const fn = authMode === "signup" ? "signUp" : "signInWithPassword";
+      const { error } = await supabase.auth[fn]({ email: authEmail, password: authPass });
+      if (error) throw error;
+    } catch (e) {
+      setAuthError(e.message || "Bir hata oluştu");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleGoogle() {
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) setAuthError(error.message);
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setScreen("landing");
+  }
   const [selectedGoal, setSelectedGoal] = useState(null);
   const [tab, setTab] = useState("home");
   const [subView, setSubView] = useState(null);
@@ -402,6 +448,62 @@ REKLAM YAPMA. Max 12-15 cümle.\nKullanıcı: ` },
   const inputStyle = { width: "100%", boxSizing: "border-box", padding: "12px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: BODY, fontSize: 14, color: C.text, outline: "none", lineHeight: 1.6, resize: "vertical" };
 
   // ═══════════════════════════════════════
+  //  AUTH GATE — giriş yapılmadıysa login ekranı
+  // ═══════════════════════════════════════
+  if (!authChecked) {
+    return (
+      <div style={{ fontFamily: BODY, background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.textSoft }}>
+        <link href={FONTS_URL} rel="stylesheet" />
+        Yükleniyor…
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div style={{ fontFamily: BODY, background: C.bg, minHeight: "100vh", color: C.text, maxWidth: 430, margin: "0 auto", position: "relative", overflow: "hidden" }}>
+        <link href={FONTS_URL} rel="stylesheet" />
+        <div style={{ position: "absolute", top: -50, right: -40, width: 180, height: 180, borderRadius: "50%", background: `radial-gradient(circle, ${C.roseSoft} 0%, transparent 70%)`, filter: "blur(35px)", pointerEvents: "none" }} />
+        <div style={{ padding: "64px 24px 24px", position: "relative" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: `linear-gradient(135deg, ${C.pink}, ${C.rose}, #F8A0C0)`, margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 6px 24px ${C.pinkSoft}` }}><HexLogo size={48} /></div>
+            <h1 style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 700, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Skin Harmony Lab</h1>
+            <p style={{ color: C.textSoft, fontSize: 13, lineHeight: 1.5 }}>
+              {authMode === "signup" ? "Hesap oluştur, verilerin sana özel kalsın" : "Hoş geldin, devam etmek için giriş yap"}
+            </p>
+          </div>
+
+          <Btn onClick={handleGoogle} style={{ width: "100%", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span style={{ fontWeight: 800, color: "#4285F4" }}>G</span> Google ile devam et
+          </Btn>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0 16px" }}>
+            <div style={{ flex: 1, height: 1, background: C.border }} />
+            <span style={{ fontSize: 11, color: C.textSoft }}>veya e-posta ile</span>
+            <div style={{ flex: 1, height: 1, background: C.border }} />
+          </div>
+
+          <input style={{ ...inputStyle, marginBottom: 10 }} type="email" placeholder="E-posta" value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
+          <input style={{ ...inputStyle, marginBottom: 10 }} type="password" placeholder="Şifre" value={authPass} onChange={e => setAuthPass(e.target.value)} />
+
+          {authError && <p style={{ color: C.red, fontSize: 12, margin: "0 0 10px" }}>{authError}</p>}
+
+          <Btn variant="primary" disabled={authBusy} onClick={handleEmailAuth} style={{ width: "100%", marginBottom: 14 }}>
+            {authBusy ? "..." : authMode === "signup" ? "Kayıt ol" : "Giriş yap"}
+          </Btn>
+
+          <p style={{ textAlign: "center", fontSize: 13, color: C.textSoft }}>
+            {authMode === "signup" ? "Zaten hesabın var mı? " : "Hesabın yok mu? "}
+            <span onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setAuthError(""); }} style={{ color: C.pink, fontWeight: 600, cursor: "pointer" }}>
+              {authMode === "signup" ? "Giriş yap" : "Kayıt ol"}
+            </span>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════
   //  LANDING
   // ═══════════════════════════════════════
   if (screen === "landing") {
@@ -444,6 +546,9 @@ REKLAM YAPMA. Max 12-15 cümle.\nKullanıcı: ` },
             </div>
           )}
 
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <span onClick={handleSignOut} style={{ fontSize: 12, color: C.textSoft, cursor: "pointer", textDecoration: "underline" }}>Çıkış yap</span>
+          </div>
           <p style={{ textAlign: "center", fontSize: 10, color: C.textSoft, marginTop: 20, lineHeight: 1.5 }}>⚕️ Tıbbi teşhis koymaz. Reklam yapmaz.</p>
         </div>
       </div>
